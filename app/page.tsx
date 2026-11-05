@@ -13,18 +13,30 @@ type Project = {
   author: string;
   ownerId: string;
   course: string;
+  semester?: number;
   mode: string;
   ods: string;
   skills: string[];
   members: number;
-  needed: string;
+  memberIds?: string[];
+  maxMembers?: number;
+  availability?: string[];
+  needed: string[] | string;
   whatsappUrl?: string;
   color: string;
 };
 type Student = { id: string; name: string; photoURL?: string; course?: string; mode?: string; interests?: string[]; createdAt?: Timestamp; updatedAt?: Timestamp };
-type ProjectForm = { title: string; description: string; course: string; mode: string; ods: string; skills: string[]; needed: string; whatsappUrl: string };
-const blankForm: ProjectForm = { title: "", description: "", course: "", mode: "Online", ods: "ODS 11 · Cidades", skills: [], needed: "", whatsappUrl: "" };
+type ProjectForm = { title: string; description: string; course: string; semester: number | null; maxMembers: number; mode: string; ods: string; skills: string[]; needed: string[]; availability: string[]; whatsappUrl: string };
+type JoinRequest = { userId: string; name: string; photoURL?: string; availability: string[]; status: "pending" | "accepted" | "rejected" | "cancelled"; createdAt?: Timestamp };
+const blankForm: ProjectForm = { title: "", description: "", course: "", semester: null, maxMembers: 5, mode: "Online", ods: "ODS 11 · Cidades", skills: [], needed: [], availability: [], whatsappUrl: "" };
 const projectColors = ["mint", "peach", "lavender"];
+const availabilityOptions = ["Meio período", "Período integral", "Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado", "Domingo"];
+const fiapCourses = [
+  "Agentes Inteligentes", "Análise e Desenvolvimento de Sistemas", "Banco de Dados", "Design Gráfico", "Jogos Digitais",
+  "Gestão da Tecnologia da Informação", "Gestão de IA", "Inteligência Artificial", "Marketing", "Segurança Cibernética",
+  "Sistemas para Internet", "Administração", "Ciência da Computação", "Engenharia de Computação", "Engenharia de Software",
+  "Engenharia Mecatrônica", "Sistemas de Informação",
+];
 
 function normalizeWhatsAppUrl(value: string) {
   const trimmed = value.trim();
@@ -53,18 +65,27 @@ export default function Home() {
   const [editing, setEditing] = useState<Project | null>(null);
   const [form, setForm] = useState<ProjectForm>(blankForm);
   const [skillInput, setSkillInput] = useState("");
+  const [neededCourseInput, setNeededCourseInput] = useState("");
   const [saving, setSaving] = useState(false);
+  const [joiningProjectId, setJoiningProjectId] = useState("");
+  const [requestingProject, setRequestingProject] = useState<Project | null>(null);
+  const [requestAvailability, setRequestAvailability] = useState<string[]>([]);
+  const [projectRequests, setProjectRequests] = useState<Record<string, JoinRequest[]>>({});
+  const [myProjectRequests, setMyProjectRequests] = useState<Record<string, JoinRequest | null>>({});
   const [dbError, setDbError] = useState("");
   const loginInProgress = useRef(false);
   const pendingCreate = useRef(false);
 
   useEffect(() => onAuthStateChanged(auth, (currentUser) => {
     setUser(currentUser);
+    setMyProjectRequests({});
     setAuthReady(true);
     if (currentUser && pendingCreate.current) {
       pendingCreate.current = false;
       setEditing(null);
       setForm(blankForm);
+      setSkillInput("");
+      setNeededCourseInput("");
       setModal(true);
     }
   }), []);
@@ -77,6 +98,22 @@ export default function Home() {
   useEffect(() => onSnapshot(collection(db, "users"), (snapshot) => {
     setStudents(snapshot.docs.map((item) => ({ id: item.id, ...item.data() } as Student)));
   }, (error) => setNotice(error.code === "permission-denied" ? "As regras do Firestore bloquearam a leitura de perfis." : `Erro ao carregar perfis: ${error.message}`)), []);
+
+  const ownedProjectIds = user ? projects.filter((project) => project.ownerId === user.uid).map((project) => project.id).join(",") : "";
+  useEffect(() => {
+    const unsubscribers = ownedProjectIds.split(",").filter(Boolean).map((projectId) => onSnapshot(collection(db, "projects", projectId, "requests"), (snapshot) => {
+      setProjectRequests((current) => ({ ...current, [projectId]: snapshot.docs.map((item) => ({ userId: item.id, ...item.data() } as JoinRequest)) }));
+    }));
+    return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
+  }, [ownedProjectIds]);
+  const allProjectIds = projects.map((project) => project.id).join(",");
+  useEffect(() => {
+    if (!user) return;
+    const unsubscribers = allProjectIds.split(",").filter(Boolean).map((projectId) => onSnapshot(doc(db, "projects", projectId, "requests", user.uid), (snapshot) => {
+      setMyProjectRequests((current) => ({ ...current, [projectId]: snapshot.exists() ? ({ userId: user.uid, ...snapshot.data() } as JoinRequest) : null }));
+    }));
+    return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
+  }, [allProjectIds, user]);
 
   useEffect(() => {
     if (!user) return;
@@ -121,6 +158,9 @@ export default function Home() {
 
   const visibleProjects = useMemo(() => projects.filter((project) => `${project.title} ${project.description} ${project.skills.join(" ")} ${project.ods}`.toLowerCase().includes(queryText.toLowerCase()) && (mode === "Todos os formatos" || project.mode === mode)), [projects, queryText, mode]);
   const recentStudents = useMemo(() => [...students].sort((a, b) => (b.createdAt?.toMillis() ?? b.updatedAt?.toMillis() ?? 0) - (a.createdAt?.toMillis() ?? a.updatedAt?.toMillis() ?? 0)).slice(0, 4), [students]);
+  const getProjectMemberIds = (project: Project) => project.memberIds?.length ? project.memberIds : [project.ownerId];
+  const getProjectMembers = (project: Project) => getProjectMemberIds(project).map((id) => students.find((student) => student.id === id) || (id === project.ownerId ? { id, name: project.author } : null)).filter((member): member is Student => Boolean(member));
+  const getProjectMemberCount = (project: Project) => Math.max(project.members || 1, getProjectMemberIds(project).length);
 
   async function login() {
     if (loginInProgress.current || auth.currentUser) return;
@@ -157,8 +197,11 @@ export default function Home() {
   }
   function openEdit(project: Project) {
     setEditing(project);
-    setForm({ title: project.title, description: project.description, course: project.course, mode: project.mode, ods: project.ods, skills: project.skills || [], needed: project.needed, whatsappUrl: project.whatsappUrl || "" });
+    const legacyCourse = project.course.match(/^(.*?)\s*[·-]\s*(\d{1,2})(?:º|°)?\s*(?:semestre)?$/i);
+    const needed = Array.isArray(project.needed) ? project.needed : project.needed ? [project.needed] : [];
+    setForm({ title: project.title, description: project.description, course: legacyCourse ? legacyCourse[1].trim() : project.course, semester: project.semester || (legacyCourse ? Number(legacyCourse[2]) : null), maxMembers: Math.max(project.maxMembers || 5, project.members || 1), mode: project.mode, ods: project.ods, skills: project.skills || [], needed, availability: project.availability || [], whatsappUrl: project.whatsappUrl || "" });
     setSkillInput("");
+    setNeededCourseInput("");
     setModal(true);
   }
   function addSkill() {
@@ -174,23 +217,93 @@ export default function Home() {
   function removeSkill(skillToRemove: string) {
     setForm({ ...form, skills: form.skills.filter((skill) => skill !== skillToRemove) });
   }
+  function addNeededCourse() {
+    const course = neededCourseInput;
+    if (!course) return;
+    const needed = course === "Indiferente" ? [course] : [...form.needed.filter((item) => item !== "Indiferente"), course];
+    setForm({ ...form, needed: [...new Set(needed)] });
+    setNeededCourseInput("");
+  }
+  function removeNeededCourse(courseToRemove: string) {
+    setForm({ ...form, needed: form.needed.filter((course) => course !== courseToRemove) });
+  }
+  function toggleAvailability(value: string, selected: string[], update: (next: string[]) => void) {
+    update(selected.includes(value) ? selected.filter((item) => item !== value) : [...selected, value]);
+  }
   async function saveProject(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!user) return;
+    if (!form.semester) { setNotice("Selecione seu semestre para continuar."); return; }
     const whatsappUrl = normalizeWhatsAppUrl(form.whatsappUrl);
     if (whatsappUrl === null) { setNotice("Use um link HTTPS válido de grupo ou canal do WhatsApp."); return; }
     setSaving(true);
     const values = {
-      title: form.title.trim(), description: form.description.trim(), course: form.course.trim(), mode: form.mode,
-      ods: form.ods.trim(), skills: form.skills, needed: form.needed.trim(), whatsappUrl,
+      title: form.title.trim(), description: form.description.trim(), course: form.course.trim(), semester: form.semester, mode: form.mode,
+      ods: form.ods.trim(), skills: form.skills, needed: form.needed.length ? form.needed : ["Indiferente"], availability: form.availability, maxMembers: form.maxMembers, whatsappUrl,
       author: user.displayName || user.email?.split("@")[0] || "Estudante", updatedAt: serverTimestamp(),
     };
     try {
       if (editing) await updateDoc(doc(db, "projects", editing.id), values);
-      else await addDoc(collection(db, "projects"), { ...values, ownerId: user.uid, members: 1, createdAt: serverTimestamp() });
+      else await addDoc(collection(db, "projects"), { ...values, ownerId: user.uid, members: 1, memberIds: [user.uid], createdAt: serverTimestamp() });
       setModal(false); setNotice(editing ? "Projeto atualizado." : "Projeto publicado.");
     } catch (error) { setNotice(`Não foi possível salvar: ${(error as Error).message}`); }
     finally { setSaving(false); }
+  }
+  function startJoinRequest(project: Project) {
+    if (!user) { setNotice("Entre com Google para solicitar uma vaga."); void login(); return; }
+    setRequestAvailability([]);
+    setRequestingProject(project);
+  }
+  async function submitJoinRequest(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!user || !requestingProject) return;
+    if (!requestAvailability.length) { setNotice("Selecione sua disponibilidade antes de enviar."); return; }
+    setJoiningProjectId(requestingProject.id);
+    try {
+      const requestRef = doc(db, "projects", requestingProject.id, "requests", user.uid);
+      const userRef = doc(db, "users", user.uid);
+      const outcome = await runTransaction(db, async (transaction) => {
+        const [current, profile] = await Promise.all([transaction.get(requestRef), transaction.get(userRef)]);
+        if (current.exists() && ["pending", "accepted"].includes(current.data().status)) return current.data().status as string;
+        const profileData = profile.data() || {};
+        if (profileData.activeProjectId) return "already-member";
+        const pendingProjectIds = Array.isArray(profileData.pendingProjectIds) ? profileData.pendingProjectIds as string[] : [];
+        transaction.set(requestRef, { userId: user.uid, name: user.displayName || user.email?.split("@")[0] || "Estudante", photoURL: user.photoURL || "", availability: requestAvailability, status: "pending", createdAt: serverTimestamp() });
+        transaction.set(userRef, { pendingProjectIds: [...new Set([...pendingProjectIds, requestingProject.id])] }, { merge: true });
+        return "pending";
+      });
+      setRequestingProject(null);
+      setNotice(outcome === "accepted" ? "Você já faz parte deste projeto." : outcome === "already-member" ? "Você já faz parte de um projeto e não pode entrar em outro." : outcome === "pending" ? "Pedido enviado. O criador do projeto vai analisar sua disponibilidade." : "Seu pedido foi enviado novamente.");
+    } catch (error) { setNotice(`Não foi possível enviar o pedido: ${(error as Error).message}`); }
+    finally { setJoiningProjectId(""); }
+  }
+  async function reviewJoinRequest(project: Project, request: JoinRequest, accept: boolean) {
+    if (!user || user.uid !== project.ownerId) return;
+    setJoiningProjectId(project.id);
+    try {
+      const projectRef = doc(db, "projects", project.id);
+      const requestRef = doc(db, "projects", project.id, "requests", request.userId);
+      const outcome = await runTransaction(db, async (transaction) => {
+        const [projectSnapshot, requestSnapshot, profileSnapshot] = await Promise.all([transaction.get(projectRef), transaction.get(requestRef), transaction.get(doc(db, "users", request.userId))]);
+        if (!projectSnapshot.exists() || !requestSnapshot.exists() || requestSnapshot.data().status !== "pending") return "stale";
+        const profileData = profileSnapshot.data() || {};
+        if (!accept) { transaction.update(requestRef, { status: "rejected" }); return "rejected"; }
+        if (profileData.activeProjectId) return "already-member";
+        const data = projectSnapshot.data();
+        const memberIds = Array.isArray(data.memberIds) ? data.memberIds as string[] : data.ownerId ? [data.ownerId as string] : [];
+        const maxMembers = Number(data.maxMembers || 5);
+        if (!memberIds.includes(request.userId) && memberIds.length >= maxMembers) return "full";
+        const nextIds = memberIds.includes(request.userId) ? memberIds : [...memberIds, request.userId];
+        transaction.update(projectRef, { memberIds: nextIds, members: nextIds.length, maxMembers });
+        transaction.update(requestRef, { status: "accepted" });
+        const pendingProjectIds = Array.isArray(profileData.pendingProjectIds) ? profileData.pendingProjectIds as string[] : [];
+        for (const pendingProjectId of pendingProjectIds.filter((id) => id !== project.id)) transaction.update(doc(db, "projects", pendingProjectId, "requests", request.userId), { status: "cancelled" });
+        transaction.set(doc(db, "users", request.userId), { activeProjectId: project.id, pendingProjectIds: [] }, { merge: true });
+        return "accepted";
+      });
+      setNotice(outcome === "accepted" ? `Pedido de ${request.name} aceito. Os outros pedidos dessa pessoa foram cancelados.` : outcome === "rejected" ? `Pedido de ${request.name} recusado.` : outcome === "full" ? "O projeto atingiu o limite. Aumente o limite antes de aceitar mais pessoas." : outcome === "already-member" ? "Essa pessoa já faz parte de outro projeto." : "Este pedido já foi atualizado.");
+    } catch (error) { setNotice(`Não foi possível atualizar o pedido: ${(error as Error).message}`); }
+    finally { setJoiningProjectId(""); }
   }
   async function removeProject(project: Project) {
     if (!window.confirm(`Excluir o projeto “${project.title}”?`)) return;
@@ -235,13 +348,13 @@ export default function Home() {
         <div className="section-heading"><div><div className="eyebrow muted-eyebrow">{user ? "Sua comunidade" : "Ideias novas da comunidade"}</div><h2>Projetos recentes</h2></div><button className="create-button" onClick={openCreate} disabled={signingIn}><span>＋</span> {signingIn ? "Conectando…" : "Criar projeto"}</button></div>
         {dbError && <div className="database-error" role="alert"><div><strong>Firestore bloqueou o acesso</strong><p>{dbError}</p></div><a href="https://console.firebase.google.com/project/ideator-a0d1c/firestore/databases/-default-/rules" target="_blank" rel="noreferrer">Abrir regras do Firestore</a></div>}
         <div className="explore-toolbar"><div className="project-count">{projects.length} projetos</div><div className="filters"><label className="search-box"><span className="search-icon" aria-hidden="true" /><input aria-label="Buscar projetos" placeholder="Buscar projetos, temas, habilidades..." value={queryText} onChange={(event) => setQueryText(event.target.value)} /><kbd>⌘ K</kbd></label><select aria-label="Filtrar por formato" value={mode} onChange={(event) => setMode(event.target.value)}><option>Todos os formatos</option><option>Online</option><option>Presencial</option><option>Híbrido</option></select></div></div>
-        <div className="project-grid">{visibleProjects.map((project, index) => <article className="project-card" key={project.id}><div className={`project-art ${projectColors[index % projectColors.length]}`}><span className="project-ods">{project.ods}</span><span className="project-symbol">{index % 3 === 0 ? "⌖" : index % 3 === 1 ? "⌁" : "◌"}</span><span className="project-format">● &nbsp;{project.mode}</span></div><div className="project-content"><div className="project-author"><span className="author-avatar">{project.author.split(" ").map((part) => part[0]).slice(0, 2).join("")}</span><span>{project.author}<small>{project.course}</small></span>{user?.uid === project.ownerId && <div className="owner-actions"><button aria-label="Editar projeto" onClick={() => openEdit(project)}>Editar</button><button aria-label="Excluir projeto" onClick={() => void removeProject(project)}>Excluir</button></div>}</div><h3>{project.title}</h3><p>{project.description}</p><div className="skill-list">{project.skills.map((skill) => <span key={skill}>{skill}</span>)}</div><div className="project-footer"><span><b>{project.members}</b> participantes <i>·</i> busca <b>{project.needed}</b></span>{normalizeWhatsAppUrl(project.whatsappUrl || "") ? <a className="join-button" href={normalizeWhatsAppUrl(project.whatsappUrl || "") || undefined} target="_blank" rel="noopener noreferrer">Quero entrar no projeto</a> : <button className="join-button" disabled title="O responsável ainda não adicionou um convite do WhatsApp">Link indisponível</button>}</div></div></article>)}</div>
+        <div className="project-grid">{visibleProjects.map((project, index) => { const memberIds = getProjectMemberIds(project); const memberCount = getProjectMemberCount(project); const maxMembers = Math.max(project.maxMembers || 5, memberCount); const alreadyMember = Boolean(user && memberIds.includes(user.uid)); const joinedElsewhere = Boolean(user && projects.some((other) => other.id !== project.id && getProjectMemberIds(other).includes(user.uid))); const full = memberCount >= maxMembers; const members = getProjectMembers(project).slice(0, 4); const whatsappUrl = normalizeWhatsAppUrl(project.whatsappUrl || ""); return <article className="project-card" key={project.id}><div className={`project-art ${projectColors[index % projectColors.length]}`}><span className="project-ods">{project.ods}</span><span className="project-symbol">{index % 3 === 0 ? "⌖" : index % 3 === 1 ? "⌁" : "◌"}</span><span className="project-format">● &nbsp;{project.mode}</span></div><div className="project-content"><div className="project-author"><span className="author-avatar">{project.author.split(" ").map((part) => part[0]).slice(0, 2).join("")}</span><span>{project.author}<small>{project.course}{project.semester ? ` · ${project.semester}º semestre` : ""}</small></span>{user?.uid === project.ownerId && <div className="owner-actions"><button aria-label="Editar projeto" onClick={() => openEdit(project)}>Editar</button><button aria-label="Excluir projeto" onClick={() => void removeProject(project)}>Excluir</button></div>}</div><h3>{project.title}</h3><p>{project.description}</p><div className="skill-list">{project.skills.map((skill) => <span key={skill}>{skill}</span>)}</div><div className="project-footer"><div className="participant-summary"><div className="participant-avatars" aria-label="Participantes do projeto">{members.map((member) => <span className="participant-avatar" key={member.id} title={member.name} aria-label={member.name}>{member.photoURL ? <Image src={member.photoURL} width={30} height={30} alt="" /> : member.name.split(" ").map((part) => part[0]).slice(0, 2).join("")}</span>)}</div><span><b>{memberCount}/{maxMembers}</b> participantes</span><small>Busca: {(Array.isArray(project.needed) ? project.needed : project.needed ? [project.needed] : []).join(", ") || "Indiferente"}</small></div>{alreadyMember ? whatsappUrl ? <a className="join-button" href={whatsappUrl} target="_blank" rel="noopener noreferrer">Abrir grupo</a> : <button className="join-button" disabled title="O responsável ainda não adicionou um convite do WhatsApp">Link indisponível</button> : <button className="join-button" onClick={() => startJoinRequest(project)} disabled={joiningProjectId === project.id || full || joinedElsewhere || myProjectRequests[project.id]?.status === "pending" || myProjectRequests[project.id]?.status === "cancelled"}>{joiningProjectId === project.id ? "Enviando…" : joinedElsewhere ? "Você já participa de um projeto" : full ? "Vagas preenchidas" : myProjectRequests[project.id]?.status === "pending" ? "Pedido pendente" : myProjectRequests[project.id]?.status === "cancelled" ? "Pedido cancelado" : myProjectRequests[project.id]?.status === "rejected" ? "Solicitar novamente" : "Quero entrar no projeto"}</button>}</div>{user?.uid === project.ownerId && <details className="join-requests"><summary>Pedidos de entrada ({(projectRequests[project.id] || []).filter((item) => item.status === "pending").length})</summary>{(projectRequests[project.id] || []).filter((item) => item.status === "pending").map((request) => <div className="join-request" key={request.userId}><div className="request-person">{request.photoURL ? <Image src={request.photoURL} width={32} height={32} alt="" /> : <span>{request.name.slice(0, 1).toUpperCase()}</span>}<div><b>{request.name}</b><small>{request.availability.join(", ")}</small></div></div><div className="request-actions"><button onClick={() => void reviewJoinRequest(project, request, false)} disabled={joiningProjectId === project.id}>Recusar</button><button onClick={() => void reviewJoinRequest(project, request, true)} disabled={joiningProjectId === project.id || memberCount >= maxMembers}>Aceitar</button></div></div>)}</details>}</div></article>; })}</div>
         {visibleProjects.length === 0 && <div className="empty-state">Nenhum projeto por aqui ainda.</div>}
       </section>
       {!user && <section className="how-section" id="como-funciona"><div className="how-intro"><div className="eyebrow muted-eyebrow">Simples assim</div><h2>Da primeira conversa<br />ao projeto de verdade.</h2><p>O próximo desafio pode começar com uma conexão que você ainda não fez.</p></div><div className="steps"><article><span className="step-num">01</span><span className="step-icon">⌕</span><h3>Explore</h3><p>Descubra projetos e pessoas com interesses parecidos com os seus.</p></article><article><span className="step-num">02</span><span className="step-icon">↗</span><h3>Conecte</h3><p>Encontre um projeto para colaborar ou conheça alguém para trocar ideias.</p></article><article><span className="step-num">03</span><span className="step-icon">✳</span><h3>Construa</h3><p>Leve sua ideia mais longe, junto com a comunidade.</p></article></div></section>}
       {!user && <footer className="footer"><a className="brand footer-brand" href="#inicio"><span className="brand-mark">i.</span><span>ideator<span className="brand-dot">.</span></span></a><span>Feito para conectar quem estuda, cria e transforma.</span><span>Comunidade · 2026</span></footer>}
-      {modal && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setModal(false); }}><section className="project-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><button className="modal-close" aria-label="Fechar" onClick={() => setModal(false)}>×</button><div className="eyebrow muted-eyebrow">Ideator · Projetos</div><h2 id="modal-title">{editing ? "Editar projeto" : "Compartilhe sua ideia"}</h2><p>Conte à comunidade o que você quer construir e quem gostaria de encontrar.</p><form onSubmit={(event) => void saveProject(event)}><label>Nome do projeto<input required maxLength={70} value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} /></label><label>O que o projeto resolve?<textarea required maxLength={400} rows={3} value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} /></label><label>Seu curso e semestre<input required placeholder="Ex.: Engenharia de Software · 2º semestre" value={form.course} onChange={(event) => setForm({ ...form, course: event.target.value })} /></label><div className="form-row"><label>Formato<select value={form.mode} onChange={(event) => setForm({ ...form, mode: event.target.value })}><option>Online</option><option>Presencial</option><option>Híbrido</option></select></label><label>ODS<select value={form.ods} onChange={(event) => setForm({ ...form, ods: event.target.value })}>{["ODS 2 · Fome zero", "ODS 3 · Saúde", "ODS 4 · Educação", "ODS 9 · Inovação", "ODS 10 · Desigualdades", "ODS 11 · Cidades", "ODS 13 · Clima"].map((ods) => <option key={ods}>{ods}</option>)}</select></label></div><fieldset className="skills-field"><legend>Competências necessárias</legend><div className="skill-entry">{form.skills.map((skill) => <span className="skill-chip" key={skill}>{skill}<button type="button" aria-label={`Remover competência ${skill}`} onClick={() => removeSkill(skill)}>×</button></span>)}<input aria-label="Nova competência" placeholder="Ex.: React, UX/UI, pesquisa" value={skillInput} onChange={(event) => setSkillInput(event.target.value)} onKeyDown={handleSkillKeyDown} /><button className="add-skill" type="button" onClick={addSkill}>Adicionar</button></div><small>Adicione uma competência por vez.</small></fieldset><label>Quem você está buscando?<input required placeholder="Ex.: pessoa de UX ou dados" value={form.needed} onChange={(event) => setForm({ ...form, needed: event.target.value })} /></label><label>Link do grupo ou canal do WhatsApp <small>Opcional · convite para entrar no projeto</small><input type="url" placeholder="https://chat.whatsapp.com/..." value={form.whatsappUrl} onChange={(event) => setForm({ ...form, whatsappUrl: event.target.value })} /></label><button className="modal-submit" type="submit" disabled={saving}>{saving ? "Salvando…" : editing ? "Salvar alterações" : "Publicar projeto"}</button></form></section></div>}
-      {notice && <div className="toast" role="status">{notice}<button aria-label="Fechar aviso" onClick={() => setNotice("")}>×</button></div>}
+      {modal && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setModal(false); }}><section className="project-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><button className="modal-close" aria-label="Fechar" onClick={() => setModal(false)}>×</button><div className="eyebrow muted-eyebrow">Ideator · Projetos</div><h2 id="modal-title">{editing ? "Editar projeto" : "Compartilhe sua ideia"}</h2><p>Conte à comunidade o que você quer construir e quem gostaria de encontrar.</p><form onSubmit={(event) => void saveProject(event)}><label>Nome do projeto<input required maxLength={70} value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} /></label><label>O que o projeto resolve?<textarea required maxLength={400} rows={3} value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} /></label><label>Seu curso<input required placeholder="Ex.: Ciência da Computação" value={form.course} onChange={(event) => setForm({ ...form, course: event.target.value })} /></label><fieldset className="semester-field"><legend>Semestre</legend><div className="semester-options">{Array.from({ length: 10 }, (_, index) => index + 1).map((semester) => <button key={semester} type="button" aria-label={`${semester}º semestre`} aria-pressed={form.semester === semester} className={form.semester === semester ? "semester-option selected" : "semester-option"} onClick={() => setForm({ ...form, semester })}>{semester}</button>)}</div></fieldset><label>Máximo de participantes<input required type="number" min={1} max={50} value={form.maxMembers} onChange={(event) => setForm({ ...form, maxMembers: Math.min(50, Math.max(1, Number(event.target.value) || 1)) })} /><small>Incluindo você</small></label><div className="form-row"><label>Formato<select value={form.mode} onChange={(event) => setForm({ ...form, mode: event.target.value })}><option>Online</option><option>Presencial</option><option>Híbrido</option></select></label><label>ODS<select value={form.ods} onChange={(event) => setForm({ ...form, ods: event.target.value })}>{["ODS 2 · Fome zero", "ODS 3 · Saúde", "ODS 4 · Educação", "ODS 9 · Inovação", "ODS 10 · Desigualdades", "ODS 11 · Cidades", "ODS 13 · Clima"].map((ods) => <option key={ods}>{ods}</option>)}</select></label></div><fieldset className="skills-field"><legend>Competências necessárias</legend><div className="skill-entry">{form.skills.map((skill) => <span className="skill-chip" key={skill}>{skill}<button type="button" aria-label={`Remover competência ${skill}`} onClick={() => removeSkill(skill)}>×</button></span>)}<input aria-label="Nova competência" placeholder="Ex.: React, UX/UI, pesquisa" value={skillInput} onChange={(event) => setSkillInput(event.target.value)} onKeyDown={handleSkillKeyDown} /><button className="add-skill" type="button" onClick={addSkill}>Adicionar</button></div><small>Adicione uma competência por vez.</small></fieldset><fieldset className="availability-field"><legend>Disponibilidade esperada</legend><div className="availability-options">{availabilityOptions.map((option) => <button key={option} type="button" aria-pressed={form.availability.includes(option)} className={form.availability.includes(option) ? "availability-option selected" : "availability-option"} onClick={() => toggleAvailability(option, form.availability, (availability) => setForm({ ...form, availability }))}>{option}</button>)}</div><small>Selecione os períodos e dias em que as pessoas podem colaborar.</small></fieldset><fieldset className="skills-field"><legend>Quem você está buscando?</legend><div className="skill-entry">{form.needed.map((course) => <span className="skill-chip" key={course}>{course}<button type="button" aria-label={`Remover ${course}`} onClick={() => removeNeededCourse(course)}>×</button></span>)}<select aria-label="Escolher curso" value={neededCourseInput} onChange={(event) => setNeededCourseInput(event.target.value)}><option value="">Escolha um curso</option><option>Indiferente</option>{fiapCourses.map((course) => <option key={course}>{course}</option>)}</select><button className="add-skill" type="button" onClick={addNeededCourse} disabled={!neededCourseInput}>Adicionar</button></div><small>Adicione um ou mais cursos. Escolha “Indiferente” para aceitar pessoas de qualquer curso.</small></fieldset><label>Link do grupo ou canal do WhatsApp <small>Opcional · convite para entrar no projeto</small><input type="url" placeholder="https://chat.whatsapp.com/..." value={form.whatsappUrl} onChange={(event) => setForm({ ...form, whatsappUrl: event.target.value })} /></label><button className="modal-submit" type="submit" disabled={saving}>{saving ? "Salvando…" : editing ? "Salvar alterações" : "Publicar projeto"}</button></form></section></div>}
+      {requestingProject && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setRequestingProject(null); }}><section className="project-modal request-modal" role="dialog" aria-modal="true" aria-labelledby="request-title"><button className="modal-close" aria-label="Fechar" onClick={() => setRequestingProject(null)}>×</button><div className="eyebrow muted-eyebrow">Solicitação de entrada</div><h2 id="request-title">{requestingProject.title}</h2><p>Conte quando você pode contribuir. O criador vai analisar seu pedido antes de liberar o grupo. Disponibilidade buscada: {requestingProject.availability?.join(", ") || "sem preferência definida"}.</p><form onSubmit={(event) => void submitJoinRequest(event)}><fieldset className="availability-field"><legend>Sua disponibilidade</legend><div className="availability-options">{availabilityOptions.map((option) => <button key={option} type="button" aria-pressed={requestAvailability.includes(option)} className={requestAvailability.includes(option) ? "availability-option selected" : "availability-option"} onClick={() => toggleAvailability(option, requestAvailability, setRequestAvailability)}>{option}</button>)}</div><small>Selecione uma ou mais opções que descrevam sua disponibilidade.</small></fieldset><button className="modal-submit" type="submit" disabled={joiningProjectId === requestingProject.id}>{joiningProjectId === requestingProject.id ? "Enviando pedido…" : "Enviar pedido"}</button></form></section></div>}      {notice && <div className="toast" role="status">{notice}<button aria-label="Fechar aviso" onClick={() => setNotice("")}>×</button></div>}
     </main>
   );
 }
