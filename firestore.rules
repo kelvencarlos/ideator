@@ -42,6 +42,15 @@ service cloud.firestore {
         && request.auth.uid == userId
         && get(projectPath(projectId)).data.ownerId == userId;
     }
+    function removedFromProject(userId, projectId) {
+      let projectBefore = get(projectPath(projectId)).data;
+      let projectAfter = getAfter(projectPath(projectId)).data;
+      return request.auth != null
+        && projectBefore.ownerId == request.auth.uid
+        && projectBefore.get('memberIds', [projectBefore.ownerId]).hasAny([userId])
+        && !projectAfter.memberIds.hasAny([userId])
+        && getAfter(requestPath(projectId, userId)).data.status == 'removed';
+    }
     match /projects/{projectId} {
       allow read: if true;
       allow create: if request.auth != null
@@ -79,10 +88,17 @@ service cloud.firestore {
           && (!exists(userPath(userId)) || get(userPath(userId)).data.get('activeProjectId', '') == '');
         allow update: if request.auth != null && (
           (request.auth.uid == userId
-            && resource.data.status == 'rejected'
+            && resource.data.status in ['rejected', 'removed']
             && request.resource.data.status == 'pending'
             && validInstitution(request.resource.data.institution)
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['userId', 'name', 'photoURL', 'institution', 'availability', 'status', 'createdAt']))
+          || (get(projectPath(projectId)).data.ownerId == request.auth.uid
+            && resource.data.status == 'accepted'
+            && request.resource.data.status == 'removed'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+            && get(projectPath(projectId)).data.memberIds.hasAny([userId])
+            && !getAfter(projectPath(projectId)).data.memberIds.hasAny([userId])
+            && getAfter(userPath(userId)).data.get('activeProjectId', '') == '')
           || (get(projectPath(projectId)).data.ownerId == request.auth.uid
             && resource.data.status == 'pending'
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
@@ -115,6 +131,12 @@ service cloud.firestore {
         || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['activeProjectId', 'pendingProjectIds'])
           && request.resource.data.activeProjectId is string
           && acceptedInProject(userId, request.resource.data.activeProjectId))
+        || (request.auth != null
+          && resource.data.get('activeProjectId', '') is string
+          && resource.data.get('activeProjectId', '') != ''
+          && removedFromProject(userId, resource.data.activeProjectId)
+          && request.resource.data.activeProjectId == ''
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['activeProjectId']))
         || (request.auth.uid == userId
           && validInstitution(request.resource.data.institution)
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['institution', 'createdProjectId', 'activeProjectId', 'pendingProjectIds'])
