@@ -4,7 +4,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "ideator. — boas ideias começam com boas conexões",
-  description: "Conheça estudantes, encontre seu próximo time e tire ideias do papel.",
+  description: "Encontre um projeto para entrar ou reúna pessoas para tirar sua ideia do papel.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

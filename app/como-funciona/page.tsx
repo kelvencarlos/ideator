@@ -29,15 +29,17 @@ const flows = [
 
 export default function HowItWorksPage() {
   return (
-    <main className="how-page">
-      <header className="how-page-header">
+    <main className="app-shell how-page">
+      <header className="topbar">
         <Link className="brand" href="/" aria-label="Ideator, início">
           <span className="brand-mark">i.</span>
           <span>ideator<span className="brand-dot">.</span></span>
         </Link>
-        <nav aria-label="Navegação da página">
-          <Link href="/#explorar">Explorar projetos</Link>
+        <nav className="main-nav" aria-label="Navegação principal">
+          <Link href="/#explorar">Explorar</Link>
+          <Link className="nav-active" href="/como-funciona" aria-current="page">Como funciona</Link>
         </nav>
+        <Link className="profile-button how-header-action" href="/#explorar">Explorar projetos</Link>
       </header>
 
       <article>
