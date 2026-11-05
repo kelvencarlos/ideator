@@ -142,17 +142,12 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .how-page-header nav{display:flex;align-items:center;gap:28px;font-size:12px;color:#555}
 .how-story-hero{display:grid;grid-template-columns:minmax(0,1fr) minmax(420px,.9fr);align-items:center;gap:clamp(48px,8vw,120px);min-height:650px;padding:72px 0 88px;border-bottom:1px solid #e8e6e1}
 .how-story-intro{max-width:650px}
-.how-story-kicker{font-size:10px;font-weight:700;letter-spacing:.16em;color:#6c6b67}
-.how-story-intro h1{max-width:680px;margin:25px 0 24px;font-family:Georgia,"Times New Roman",serif;font-size:clamp(48px,6.1vw,82px);font-weight:400;line-height:.99;letter-spacing:-.065em}
+.how-story-intro h1{max-width:680px;margin:0 0 24px;font-family:Georgia,"Times New Roman",serif;font-size:clamp(48px,6.1vw,82px);font-weight:400;line-height:.99;letter-spacing:-.065em}
 .how-story-lede{max-width:590px;margin:0;color:#66645f;font-size:17px;line-height:1.7}
-.how-story-byline{margin:27px 0 0;color:#333;font-size:12px;font-weight:600}.how-story-byline span{padding:0 6px;color:#aaa}
 .how-story-art{position:relative;min-height:450px;overflow:hidden;background:#eae8e2;border-radius:4px;isolation:isolate}
-.story-art-label,.story-art-caption{position:absolute;z-index:3;left:24px;color:#65635e;font-size:9px;font-weight:650;letter-spacing:.13em}
-.story-art-label{top:24px}.story-art-caption{bottom:23px;left:50%;width:100%;transform:translateX(-50%);text-align:center}
 .story-orbit{position:absolute;z-index:-1;left:50%;top:50%;border:1px solid #d0cec7;border-radius:50%;transform:translate(-50%,-50%) rotate(-25deg)}
 .story-orbit-a{width:90%;height:48%}.story-orbit-b{width:58%;height:88%;transform:translate(-50%,-50%) rotate(36deg)}
 .story-idea{position:absolute;left:50%;top:50%;display:grid;place-content:center;width:160px;height:160px;transform:translate(-50%,-50%);border:1px solid #d7d4cc;border-radius:50%;background:#f4f2ec;text-align:center;font-family:Georgia,"Times New Roman",serif;font-size:18px;line-height:1.25;color:#252522;box-shadow:0 0 0 11px #eae8e2,0 0 0 12px #d9d7d0}
-.story-idea em{color:#78766f;font-weight:400}
 .story-person{position:absolute;display:grid;place-content:center;width:69px;height:69px;border:1px solid #e4e2dc;border-radius:50%;background:#fbfaf8;color:#252522;text-align:center;box-shadow:0 8px 24px #24221d12;animation:story-float 5s ease-in-out infinite}
 .story-person span{font-family:Georgia,"Times New Roman",serif;font-size:16px}.story-person small{margin-top:3px;color:#777;font-size:8px}.story-person-one{top:22%;left:18%}.story-person-two{top:24%;right:16%;animation-delay:-1.8s}.story-person-three{right:21%;bottom:17%;animation-delay:-3.1s}
 @keyframes story-float{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
