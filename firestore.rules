@@ -15,14 +15,16 @@ service cloud.firestore {
       return request.auth != null
         && projectAfter.ownerId == request.auth.uid
         && projectAfter.memberIds.hasAny([userId])
-        && projectAfter.memberIds.size() <= projectAfter.maxMembers
+        && projectAfter.memberIds.size() <= projectAfter.get('maxJoiners', projectAfter.get('maxMembers', 5) - 1) + 1
         && getAfter(requestPath(projectId, userId)).data.status == 'accepted';
     }
     function hasProjectSpace(projectId, userId) {
       let projectData = get(projectPath(projectId)).data;
       let memberIds = projectData.get('memberIds', [projectData.ownerId]);
+      let maxJoiners = projectData.get('maxJoiners', projectData.get('maxMembers', 5) - 1);
+      let joinerCount = memberIds.size() - (memberIds.hasAny([projectData.ownerId]) ? 1 : 0);
       return memberIds.hasAny([userId]) == false
-        && projectData.get('members', 1) < projectData.get('maxMembers', 5);
+        && joinerCount < maxJoiners;
     }
     function createdOwnProjectAfter(userId, projectId) {
       let projectAfter = getAfter(projectPath(projectId)).data;
@@ -30,7 +32,7 @@ service cloud.firestore {
         && request.auth.uid == userId
         && projectAfter.ownerId == userId
         && projectAfter.memberIds.hasAny([userId])
-        && projectAfter.maxMembers >= projectAfter.members;
+        && projectAfter.maxJoiners >= projectAfter.memberIds.size() - 1;
     }
     function existingOwnedProject(userId, projectId) {
       return request.auth != null
@@ -41,9 +43,9 @@ service cloud.firestore {
       allow read: if true;
       allow create: if request.auth != null
         && request.resource.data.ownerId == request.auth.uid
-        && request.resource.data.maxMembers is int
-        && request.resource.data.maxMembers >= 1
-        && request.resource.data.maxMembers <= 50
+        && request.resource.data.maxJoiners is int
+        && request.resource.data.maxJoiners >= 1
+        && request.resource.data.maxJoiners <= 50
         && request.resource.data.memberIds == [request.auth.uid]
         && request.resource.data.members == 1
         && (!exists(userPath(request.auth.uid))
@@ -54,8 +56,8 @@ service cloud.firestore {
       allow update: if request.auth != null
         && resource.data.ownerId == request.auth.uid
         && request.resource.data.ownerId == resource.data.ownerId
-        && request.resource.data.maxMembers >= request.resource.data.members
-        && request.resource.data.maxMembers <= 50;
+        && request.resource.data.maxJoiners >= request.resource.data.memberIds.size() - 1
+        && request.resource.data.maxJoiners <= 50;
       allow delete: if request.auth != null
         && resource.data.ownerId == request.auth.uid;
 
@@ -80,7 +82,7 @@ service cloud.firestore {
             && (request.resource.data.status == 'rejected'
               || (request.resource.data.status == 'accepted'
                 && getAfter(projectPath(projectId)).data.memberIds.hasAny([userId])
-                && getAfter(projectPath(projectId)).data.memberIds.size() <= getAfter(projectPath(projectId)).data.maxMembers)))
+                && getAfter(projectPath(projectId)).data.memberIds.size() <= getAfter(projectPath(projectId)).data.maxJoiners + 1)))
           || (resource.data.status in ['pending', 'rejected']
             && request.resource.data.status == 'cancelled'
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
