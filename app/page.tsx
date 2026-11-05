@@ -213,7 +213,8 @@ export default function Home() {
   function openEdit(project: Project) {
     setEditing(project);
     const legacyCourse = project.course.match(/^(.*?)\s*[·-]\s*(\d{1,2})(?:º|°)?\s*(?:semestre)?$/i);
-    const needed = Array.isArray(project.needed) ? project.needed : project.needed ? [project.needed] : [];
+    const savedNeeded = Array.isArray(project.needed) ? project.needed : project.needed ? [project.needed] : [];
+    const needed = savedNeeded.filter((course) => course !== "Indiferente");
     const savedAvailability = project.availability || [];
     const savedPeriod = availabilityPeriods.find((period) => savedAvailability.includes(period));
     setForm({ title: project.title, description: project.description, institution: project.institution || "", course: legacyCourse ? legacyCourse[1].trim() : project.course, semester: project.semester || (legacyCourse ? Number(legacyCourse[2]) : null), maxMembers: Math.max(1, project.maxJoiners ?? ((project.maxMembers || 5) - 1)), mode: project.mode, skills: project.skills || [], needed, availability: [...savedAvailability.filter((item) => !availabilityPeriods.includes(item)), ...(savedPeriod ? [savedPeriod] : [])], whatsappUrl: project.whatsappUrl || "" });
@@ -237,8 +238,7 @@ export default function Home() {
   function addNeededCourse() {
     const course = neededCourseInput;
     if (!course) return;
-    const needed = course === "Indiferente" ? [course] : [...form.needed.filter((item) => item !== "Indiferente"), course];
-    setForm({ ...form, needed: [...new Set(needed)] });
+    setForm({ ...form, needed: [...new Set([...form.needed, course])] });
     setNeededCourseInput("");
   }
   function removeNeededCourse(courseToRemove: string) {
@@ -263,7 +263,7 @@ export default function Home() {
     setSaving(true);
     const values = {
       title: form.title.trim(), description: form.description.trim(), institution: form.institution.trim(), course: form.course.trim(), semester: form.semester, mode: form.mode,
-      skills: form.skills, needed: form.needed.length ? form.needed : ["Indiferente"], availability: form.availability, maxJoiners: form.maxMembers, whatsappUrl,
+      skills: form.skills, needed: form.needed, availability: form.availability, maxJoiners: form.maxMembers, whatsappUrl,
       author: user.displayName || user.email?.split("@")[0] || "Estudante", updatedAt: serverTimestamp(),
     };
     try {
@@ -417,7 +417,7 @@ export default function Home() {
                 </div>
                 <fieldset className="skills-field"><legend>Competências necessárias</legend><div className="skill-entry">{form.skills.map((skill) => <span className="skill-chip" key={skill}>{skill}<button type="button" aria-label={`Remover competência ${skill}`} onClick={() => removeSkill(skill)}>×</button></span>)}<input aria-label="Nova competência" placeholder="Digite uma competência" value={skillInput} onChange={(event) => setSkillInput(event.target.value)} onKeyDown={handleSkillKeyDown} /><button className="add-skill" type="button" onClick={addSkill}>Adicionar</button></div><small>Adicione uma competência por vez.</small></fieldset>
                 <fieldset className="availability-field"><legend>Disponibilidade esperada</legend><div className="availability-subgroup"><span>Carga</span><div className="availability-options">{availabilityPeriods.map((option) => <button key={option} type="button" aria-pressed={form.availability.includes(option)} className={form.availability.includes(option) ? "availability-option selected" : "availability-option"} onClick={() => toggleAvailability(option, form.availability, (availability) => setForm({ ...form, availability }))}>{option}</button>)}</div></div><div className="availability-subgroup"><span>Dias</span><div className="availability-options">{availabilityDays.map((option) => <button key={option} type="button" aria-pressed={form.availability.includes(option)} className={form.availability.includes(option) ? "availability-option selected" : "availability-option"} onClick={() => toggleAvailability(option, form.availability, (availability) => setForm({ ...form, availability }))}>{option}</button>)}</div></div><small>Escolha uma carga e os dias que fazem sentido para o projeto.</small></fieldset>
-                <fieldset className="skills-field"><legend>Quem você está buscando?</legend><div className="skill-entry">{form.needed.map((course) => <span className="skill-chip" key={course}>{course}<button type="button" aria-label={`Remover ${course}`} onClick={() => removeNeededCourse(course)}>×</button></span>)}<select aria-label="Escolher curso" value={neededCourseInput} onChange={(event) => setNeededCourseInput(event.target.value)}><option value="">Escolha um curso</option><option>Indiferente</option>{fiapCourseGroups.map((group) => <optgroup key={group.label} label={group.label}>{group.courses.map((course) => <option key={course}>{course}</option>)}</optgroup>)}</select><button className="add-skill" type="button" onClick={addNeededCourse} disabled={!neededCourseInput}>Adicionar</button></div><small>Adicione os cursos que procura ou escolha “Indiferente”.</small></fieldset>
+                <fieldset className="skills-field"><legend>Quem você está buscando?</legend><div className="skill-entry">{form.needed.map((course) => <span className="skill-chip" key={course}>{course}<button type="button" aria-label={`Remover ${course}`} onClick={() => removeNeededCourse(course)}>×</button></span>)}<select aria-label="Escolher curso" value={neededCourseInput} onChange={(event) => setNeededCourseInput(event.target.value)}><option value="">Escolha um curso</option>{fiapCourseGroups.map((group) => <optgroup key={group.label} label={group.label}>{group.courses.map((course) => <option key={course}>{course}</option>)}</optgroup>)}</select><button className="add-skill" type="button" onClick={addNeededCourse} disabled={!neededCourseInput}>Adicionar</button></div><small>Adicione os cursos que procura. Se não selecionar nenhum, o projeto aceita estudantes de qualquer curso.</small></fieldset>
               </div>
             </section>
             <section className="editor-section editor-contact">
