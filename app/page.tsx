@@ -373,7 +373,7 @@ export default function Home() {
       <a className="skip-link" href="#explorar">Pular para o conteúdo</a>
       <header className="topbar">
         <a className="brand" href="#inicio" aria-label="Ideator, início"><span className="brand-mark">i.</span><span>ideator<span className="brand-dot">.</span></span></a>
-        <nav className="main-nav" aria-label="Navegação principal"><a className="nav-active" href="#explorar">Explorar</a>{!user && <a href="#como-funciona">Como funciona</a>}</nav>
+        <nav className="main-nav" aria-label="Navegação principal"><a className="nav-active" href="#explorar">Explorar</a><a href="/como-funciona">Como funciona</a></nav>
         {user ? <div className="account-area">{user.photoURL && <Image className="account-photo" src={user.photoURL} width={28} height={28} alt="" />}<span className="account-name">{user.displayName || user.email}</span><button className="profile-button" onClick={() => void logout()}>Sair</button></div> : <button className="profile-button" onClick={() => void login()} disabled={signingIn}>{signingIn ? "Conectando…" : "Entrar com Google"}</button>}
       </header>
       {!user && <section className="hero" id="inicio">
