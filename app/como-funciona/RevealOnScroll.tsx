@@ -6,9 +6,10 @@ import type { ReactNode } from "react";
 type RevealOnScrollProps = {
   children: ReactNode;
   className?: string;
+  sectionTitle?: string;
 };
 
-export default function RevealOnScroll({ children, className = "" }: RevealOnScrollProps) {
+export default function RevealOnScroll({ children, className = "", sectionTitle }: RevealOnScrollProps) {
   const elementRef = useRef<HTMLDivElement>(null);
   const [motionReady, setMotionReady] = useState(false);
   const [isVisible, setIsVisible] = useState(true);
@@ -36,6 +37,7 @@ export default function RevealOnScroll({ children, className = "" }: RevealOnScr
       className={`story-reveal ${className}`.trim()}
       data-motion-ready={motionReady}
       data-visible={isVisible}
+      data-section-title={sectionTitle}
     >
       {children}
     </div>
