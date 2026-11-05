@@ -175,3 +175,5 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .request-modal .availability-day-periods .availability-option{border-color:#dedede;border-radius:4px;background:#fff;color:#4e4e4e}.request-modal .availability-day-periods .availability-option:hover{border-color:#888;background:#f7f7f7}.request-modal .availability-day-periods .availability-option.selected{border-color:#1d1d1f;background:#1d1d1f;color:#fff}
 
 .participant-summary{display:flex;align-items:center;gap:11px;min-width:0}.participant-summary>span{grid-column:auto;white-space:nowrap;flex:none}.participant-summary.no-participants{display:flex}.participant-summary.no-participants .participant-avatars{display:none}.join-requests .request-actions button:last-child{border-color:#1d1d1f;background:#1d1d1f;color:#fff}.join-requests .request-actions button:last-child:hover:not(:disabled){border-color:#333;background:#333;color:#fff}
+
+.join-requests h4{margin:0 0 10px;color:#555;font-size:11px;font-weight:600}
