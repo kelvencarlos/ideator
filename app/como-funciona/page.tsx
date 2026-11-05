@@ -1,6 +1,5 @@
 import Link from "next/link";
 import RevealOnScroll from "./RevealOnScroll";
-import SectionTitleRail from "./SectionTitleRail";
 
 export const metadata = {
   title: "Como funciona — ideator.",
@@ -64,11 +63,10 @@ export default function HowItWorksPage() {
         </RevealOnScroll>
 
         <section className="how-story-body">
-          <SectionTitleRail initialTitle="Projetos exigem competências diferentes" />
           <div className="how-story-copy">
-            <RevealOnScroll sectionTitle="Projetos exigem competências diferentes">
+            <RevealOnScroll>
               <section>
-                <h2 className="story-section-heading">Projetos exigem competências diferentes</h2>
+                <h2>Projetos exigem competências diferentes</h2>
                 <p>
                   Desenvolver uma ideia pode exigir conhecimentos diferentes. Muitas vezes, o
                   próximo passo depende de encontrar alguém com experiência em tecnologia, produto,
@@ -86,9 +84,9 @@ export default function HowItWorksPage() {
               </section>
             </RevealOnScroll>
 
-            <RevealOnScroll sectionTitle="Escolha como quer participar">
+            <RevealOnScroll>
               <section>
-                <h2 className="story-section-heading">Escolha como quer participar</h2>
+                <h2>Escolha como quer participar</h2>
                 <div className="how-story-flows">
                   {flows.map((flow) => (
                     <article className="how-story-flow" key={flow.title}>
@@ -108,9 +106,9 @@ export default function HowItWorksPage() {
               </section>
             </RevealOnScroll>
 
-            <RevealOnScroll sectionTitle="Regras claras para cada projeto">
+            <RevealOnScroll>
               <section>
-                <h2 className="story-section-heading">Regras claras para cada projeto</h2>
+                <h2>Regras claras para cada projeto</h2>
                 <p>
                   Quem publica define as competências procuradas, os dias e períodos de trabalho
                   e o número de vagas. O limite considera apenas as pessoas que podem entrar; quem
@@ -129,9 +127,9 @@ export default function HowItWorksPage() {
               </section>
             </RevealOnScroll>
 
-            <RevealOnScroll sectionTitle="Encontre um projeto para participar">
+            <RevealOnScroll>
               <section className="how-story-last">
-                <h2 className="story-section-heading">Encontre um projeto para participar</h2>
+                <h2>Encontre um projeto para participar</h2>
                 <p>
                   Consulte os projetos publicados e solicite entrada naquele em que pode contribuir.
                   Se você já tem uma proposta, publique e encontre colaboradores.
