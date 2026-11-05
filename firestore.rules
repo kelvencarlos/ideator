@@ -10,6 +10,9 @@ service cloud.firestore {
     function requestPath(projectId, userId) {
       return /databases/$(database)/documents/projects/$(projectId)/requests/$(userId);
     }
+    function validInstitution(institution) {
+      return institution in ['FIAP', 'Inteli', 'Insper', 'IBMEC'];
+    }
     function acceptedInProject(userId, projectId) {
       let projectAfter = getAfter(projectPath(projectId)).data;
       return request.auth != null
@@ -43,6 +46,7 @@ service cloud.firestore {
       allow read: if true;
       allow create: if request.auth != null
         && request.resource.data.ownerId == request.auth.uid
+        && validInstitution(request.resource.data.institution)
         && request.resource.data.maxJoiners is int
         && request.resource.data.maxJoiners >= 1
         && request.resource.data.maxJoiners <= 50
@@ -56,6 +60,7 @@ service cloud.firestore {
       allow update: if request.auth != null
         && resource.data.ownerId == request.auth.uid
         && request.resource.data.ownerId == resource.data.ownerId
+        && validInstitution(request.resource.data.institution)
         && request.resource.data.maxJoiners >= request.resource.data.memberIds.size() - 1
         && request.resource.data.maxJoiners <= 50;
       allow delete: if request.auth != null
@@ -69,13 +74,15 @@ service cloud.firestore {
           && request.resource.data.userId == userId
           && request.resource.data.status == 'pending'
           && request.resource.data.availability is list
+          && validInstitution(request.resource.data.institution)
           && hasProjectSpace(projectId, userId)
           && (!exists(userPath(userId)) || get(userPath(userId)).data.get('activeProjectId', '') == '');
         allow update: if request.auth != null && (
           (request.auth.uid == userId
             && resource.data.status == 'rejected'
             && request.resource.data.status == 'pending'
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['userId', 'name', 'photoURL', 'availability', 'status', 'createdAt']))
+            && validInstitution(request.resource.data.institution)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['userId', 'name', 'photoURL', 'institution', 'availability', 'status', 'createdAt']))
           || (get(projectPath(projectId)).data.ownerId == request.auth.uid
             && resource.data.status == 'pending'
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
@@ -95,27 +102,30 @@ service cloud.firestore {
     match /users/{userId} {
       allow read: if true;
       allow create: if request.auth != null && request.auth.uid == userId
-        && (request.resource.data.keys().hasOnly(['name', 'photoURL', 'createdAt', 'updatedAt', 'pendingProjectIds'])
+        && (request.resource.data.keys().hasOnly(['name', 'photoURL', 'institution', 'createdAt', 'updatedAt', 'pendingProjectIds'])
           || (request.resource.data.createdProjectId is string
             && request.resource.data.activeProjectId == request.resource.data.createdProjectId
-            && request.resource.data.keys().hasOnly(['name', 'photoURL', 'createdAt', 'updatedAt', 'pendingProjectIds', 'createdProjectId', 'activeProjectId'])
+            && request.resource.data.keys().hasOnly(['name', 'photoURL', 'institution', 'createdAt', 'updatedAt', 'pendingProjectIds', 'createdProjectId', 'activeProjectId'])
             && (createdOwnProjectAfter(userId, request.resource.data.createdProjectId)
               || existingOwnedProject(userId, request.resource.data.createdProjectId))));
       allow update: if request.auth != null && (
         (request.auth.uid == userId
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'photoURL', 'createdAt', 'updatedAt', 'pendingProjectIds']))
+          && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['institution']) || validInstitution(request.resource.data.institution))
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'photoURL', 'institution', 'createdAt', 'updatedAt', 'pendingProjectIds']))
         || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['activeProjectId', 'pendingProjectIds'])
           && request.resource.data.activeProjectId is string
           && acceptedInProject(userId, request.resource.data.activeProjectId))
         || (request.auth.uid == userId
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['createdProjectId', 'activeProjectId', 'pendingProjectIds'])
+          && validInstitution(request.resource.data.institution)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['institution', 'createdProjectId', 'activeProjectId', 'pendingProjectIds'])
           && request.resource.data.createdProjectId is string
           && request.resource.data.activeProjectId == request.resource.data.createdProjectId
           && resource.data.get('createdProjectId', '') == ''
           && resource.data.get('activeProjectId', '') == ''
           && createdOwnProjectAfter(userId, request.resource.data.createdProjectId))
         || (request.auth.uid == userId
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['createdProjectId', 'activeProjectId', 'pendingProjectIds'])
+          && validInstitution(request.resource.data.institution)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['institution', 'createdProjectId', 'activeProjectId', 'pendingProjectIds'])
           && request.resource.data.createdProjectId is string
           && resource.data.get('createdProjectId', '') == ''
           && existingOwnedProject(userId, request.resource.data.createdProjectId))
