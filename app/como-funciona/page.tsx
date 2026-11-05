@@ -13,7 +13,7 @@ const flows = [
     steps: [
       { title: "Encontre um projeto", text: "Consulte as iniciativas e busque por tema, competência ou instituição." },
       { title: "Envie seu pedido", text: "Informe sua disponibilidade e aguarde a análise do responsável pelo projeto." },
-      { title: "Comece a colaborar", text: "Após a aprovação, o link do grupo de WhatsApp fica disponível para você." },
+      { title: "Comece a colaborar", text: "Após a aprovação, o link do grupo fica disponível para você." },
     ],
   },
   {
@@ -22,7 +22,7 @@ const flows = [
     steps: [
       { title: "Apresente a proposta", text: "Descreva o problema, informe sua instituição e curso e defina as competências, a disponibilidade e as vagas." },
       { title: "Avalie os pedidos", text: "Revise a disponibilidade de cada pessoa e aceite quem fará parte do grupo." },
-      { title: "Organize o trabalho", text: "Depois da aprovação, os participantes recebem acesso ao link do grupo de WhatsApp." },
+      { title: "Organize o trabalho", text: "Depois da aprovação, os participantes recebem acesso ao link do grupo." },
     ],
   },
 ];
@@ -123,7 +123,7 @@ export default function HowItWorksPage() {
                   um projeto também não pode participar de outro.
                 </p>
                 <p>
-                  Após a aprovação, o link do grupo de WhatsApp fica disponível para a pessoa
+                  Após a aprovação, o link do grupo fica disponível para a pessoa
                   aceita. A partir daí, o grupo pode alinhar atividades e próximos passos.
                 </p>
               </section>
