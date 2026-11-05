@@ -24,6 +24,19 @@ service cloud.firestore {
       return memberIds.hasAny([userId]) == false
         && projectData.get('members', 1) < projectData.get('maxMembers', 5);
     }
+    function createdOwnProjectAfter(userId, projectId) {
+      let projectAfter = getAfter(projectPath(projectId)).data;
+      return request.auth != null
+        && request.auth.uid == userId
+        && projectAfter.ownerId == userId
+        && projectAfter.memberIds.hasAny([userId])
+        && projectAfter.maxMembers >= projectAfter.members;
+    }
+    function existingOwnedProject(userId, projectId) {
+      return request.auth != null
+        && request.auth.uid == userId
+        && get(projectPath(projectId)).data.ownerId == userId;
+    }
     match /projects/{projectId} {
       allow read: if true;
       allow create: if request.auth != null
@@ -32,7 +45,12 @@ service cloud.firestore {
         && request.resource.data.maxMembers >= 1
         && request.resource.data.maxMembers <= 50
         && request.resource.data.memberIds == [request.auth.uid]
-        && request.resource.data.members == 1;
+        && request.resource.data.members == 1
+        && (!exists(userPath(request.auth.uid))
+          || (get(userPath(request.auth.uid)).data.get('createdProjectId', '') == ''
+            && get(userPath(request.auth.uid)).data.get('activeProjectId', '') == ''))
+        && getAfter(userPath(request.auth.uid)).data.createdProjectId == projectId
+        && getAfter(userPath(request.auth.uid)).data.activeProjectId == projectId;
       allow update: if request.auth != null
         && resource.data.ownerId == request.auth.uid
         && request.resource.data.ownerId == resource.data.ownerId
@@ -75,13 +93,30 @@ service cloud.firestore {
     match /users/{userId} {
       allow read: if true;
       allow create: if request.auth != null && request.auth.uid == userId
-        && request.resource.data.keys().hasOnly(['name', 'photoURL', 'createdAt', 'updatedAt', 'pendingProjectIds']);
+        && (request.resource.data.keys().hasOnly(['name', 'photoURL', 'createdAt', 'updatedAt', 'pendingProjectIds'])
+          || (request.resource.data.createdProjectId is string
+            && request.resource.data.activeProjectId == request.resource.data.createdProjectId
+            && request.resource.data.keys().hasOnly(['name', 'photoURL', 'createdAt', 'updatedAt', 'pendingProjectIds', 'createdProjectId', 'activeProjectId'])
+            && (createdOwnProjectAfter(userId, request.resource.data.createdProjectId)
+              || existingOwnedProject(userId, request.resource.data.createdProjectId))));
       allow update: if request.auth != null && (
         (request.auth.uid == userId
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'photoURL', 'createdAt', 'updatedAt', 'pendingProjectIds']))
         || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['activeProjectId', 'pendingProjectIds'])
           && request.resource.data.activeProjectId is string
           && acceptedInProject(userId, request.resource.data.activeProjectId))
+        || (request.auth.uid == userId
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['createdProjectId', 'activeProjectId', 'pendingProjectIds'])
+          && request.resource.data.createdProjectId is string
+          && request.resource.data.activeProjectId == request.resource.data.createdProjectId
+          && resource.data.get('createdProjectId', '') == ''
+          && resource.data.get('activeProjectId', '') == ''
+          && createdOwnProjectAfter(userId, request.resource.data.createdProjectId))
+        || (request.auth.uid == userId
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['createdProjectId', 'activeProjectId', 'pendingProjectIds'])
+          && request.resource.data.createdProjectId is string
+          && resource.data.get('createdProjectId', '') == ''
+          && existingOwnedProject(userId, request.resource.data.createdProjectId))
       );
       allow delete: if request.auth != null && request.auth.uid == userId;
     }

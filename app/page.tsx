@@ -3,7 +3,7 @@
 import { FormEvent, KeyboardEvent as ReactKeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { onAuthStateChanged, signInWithPopup, signOut, User } from "firebase/auth";
-import { Timestamp, addDoc, collection, deleteDoc, doc, onSnapshot, orderBy, query, runTransaction, serverTimestamp, updateDoc } from "firebase/firestore";
+import { Timestamp, collection, deleteDoc, doc, getDoc, getDocs, onSnapshot, orderBy, query, runTransaction, serverTimestamp, updateDoc, where } from "firebase/firestore";
 import { auth, db, googleProvider } from "@/lib/firebase";
 
 type Project = {
@@ -82,11 +82,11 @@ export default function Home() {
     setAuthReady(true);
     if (currentUser && pendingCreate.current) {
       pendingCreate.current = false;
-      setEditing(null);
-      setForm(blankForm);
-      setSkillInput("");
-      setNeededCourseInput("");
-      setModal(true);
+      void Promise.all([getDocs(query(collection(db, "projects"), where("ownerId", "==", currentUser.uid))), getDoc(doc(db, "users", currentUser.uid))]).then(([ownedProjects, profile]) => {
+        if (!ownedProjects.empty) { setNotice("Cada conta pode criar apenas um projeto."); return; }
+        if (profile.data()?.activeProjectId) { setNotice("Você já participa de um projeto e não pode criar outro."); return; }
+        setEditing(null); setForm(blankForm); setSkillInput(""); setNeededCourseInput(""); setModal(true);
+      }).catch((error: Error) => setNotice(`Não foi possível verificar seus projetos: ${error.message}`));
     }
   }), []);
 
@@ -118,15 +118,20 @@ export default function Home() {
   useEffect(() => {
     if (!user) return;
     const profileRef = doc(db, "users", user.uid);
-    void runTransaction(db, async (transaction) => {
-      const profile = await transaction.get(profileRef);
-      const createdAt = profile.data()?.createdAt;
-      transaction.set(profileRef, {
-        name: user.displayName || user.email?.split("@")[0] || "Estudante",
-        photoURL: user.photoURL || "",
-        updatedAt: serverTimestamp(),
-        ...(!createdAt ? { createdAt: serverTimestamp() } : {}),
-      }, { merge: true });
+    void getDocs(query(collection(db, "projects"), where("ownerId", "==", user.uid))).then(async (ownedProjects) => {
+      const existingOwnedProjectId = ownedProjects.docs[0]?.id;
+      await runTransaction(db, async (transaction) => {
+        const profile = await transaction.get(profileRef);
+        const profileData = profile.data() || {};
+        transaction.set(profileRef, {
+          name: user.displayName || user.email?.split("@")[0] || "Estudante",
+          photoURL: user.photoURL || "",
+          updatedAt: serverTimestamp(),
+          ...(!profileData.createdAt ? { createdAt: serverTimestamp() } : {}),
+          ...(!profileData.createdProjectId && existingOwnedProjectId ? { createdProjectId: existingOwnedProjectId } : {}),
+          ...(!profileData.activeProjectId && existingOwnedProjectId ? { activeProjectId: existingOwnedProjectId } : {}),
+        }, { merge: true });
+      });
     }).catch((error: Error) => setNotice(`Não foi possível salvar seu perfil: ${error.message}`));
   }, [user]);
 
@@ -158,6 +163,7 @@ export default function Home() {
 
   const visibleProjects = useMemo(() => projects.filter((project) => `${project.title} ${project.description} ${project.skills.join(" ")} ${project.ods}`.toLowerCase().includes(queryText.toLowerCase()) && (mode === "Todos os formatos" || project.mode === mode)), [projects, queryText, mode]);
   const recentStudents = useMemo(() => [...students].sort((a, b) => (b.createdAt?.toMillis() ?? b.updatedAt?.toMillis() ?? 0) - (a.createdAt?.toMillis() ?? a.updatedAt?.toMillis() ?? 0)).slice(0, 4), [students]);
+  const hasCreatedProject = Boolean(user && projects.some((project) => project.ownerId === user.uid));
   const getProjectMemberIds = (project: Project) => project.memberIds?.length ? project.memberIds : [project.ownerId];
   const getProjectMembers = (project: Project) => getProjectMemberIds(project).map((id) => students.find((student) => student.id === id) || (id === project.ownerId ? { id, name: project.author } : null)).filter((member): member is Student => Boolean(member));
   const getProjectMemberCount = (project: Project) => Math.max(project.members || 1, getProjectMemberIds(project).length);
@@ -191,9 +197,14 @@ export default function Home() {
       setSigningIn(false);
     }
   }
-  function openCreate() {
+  async function openCreate() {
     if (!user) { pendingCreate.current = true; void login(); return; }
-    setEditing(null); setForm(blankForm); setSkillInput(""); setModal(true);
+    try {
+      const [ownedProjects, profile] = await Promise.all([getDocs(query(collection(db, "projects"), where("ownerId", "==", user.uid))), getDoc(doc(db, "users", user.uid))]);
+      if (!ownedProjects.empty) { setNotice("Cada conta pode criar apenas um projeto."); return; }
+      if (profile.data()?.activeProjectId) { setNotice("Você já participa de um projeto e não pode criar outro."); return; }
+      setEditing(null); setForm(blankForm); setSkillInput(""); setNeededCourseInput(""); setModal(true);
+    } catch (error) { setNotice(`Não foi possível verificar seus projetos: ${(error as Error).message}`); }
   }
   function openEdit(project: Project) {
     setEditing(project);
@@ -244,7 +255,20 @@ export default function Home() {
     };
     try {
       if (editing) await updateDoc(doc(db, "projects", editing.id), values);
-      else await addDoc(collection(db, "projects"), { ...values, ownerId: user.uid, members: 1, memberIds: [user.uid], createdAt: serverTimestamp() });
+      else {
+        const projectRef = doc(collection(db, "projects"));
+        const profileRef = doc(db, "users", user.uid);
+        const ownedProjects = await getDocs(query(collection(db, "projects"), where("ownerId", "==", user.uid)));
+        if (!ownedProjects.empty) throw new Error("Cada conta pode criar apenas um projeto.");
+        await runTransaction(db, async (transaction) => {
+          const profileSnapshot = await transaction.get(profileRef);
+          const profile = profileSnapshot.data() || {};
+          if (profile.createdProjectId) throw new Error("Cada conta pode criar apenas um projeto.");
+          if (profile.activeProjectId) throw new Error("Você já participa de outro projeto e não pode criar um segundo projeto.");
+          transaction.set(projectRef, { ...values, ownerId: user.uid, members: 1, memberIds: [user.uid], createdAt: serverTimestamp() });
+          transaction.set(profileRef, { createdProjectId: projectRef.id, activeProjectId: projectRef.id, pendingProjectIds: [] }, { merge: true });
+        });
+      }
       setModal(false); setNotice(editing ? "Projeto atualizado." : "Projeto publicado.");
     } catch (error) { setNotice(`Não foi possível salvar: ${(error as Error).message}`); }
     finally { setSaving(false); }
@@ -345,7 +369,7 @@ export default function Home() {
         <div className="hero-bottom"><span>UM PONTO DE ENCONTRO PARA QUEM FAZ</span><span>COMUNIDADE · 2026</span></div>
       </section>}
       <section className="explore-section" id="explorar">
-        <div className="section-heading"><div><div className="eyebrow muted-eyebrow">{user ? "Sua comunidade" : "Ideias novas da comunidade"}</div><h2>Projetos recentes</h2></div><button className="create-button" onClick={openCreate} disabled={signingIn}><span>＋</span> {signingIn ? "Conectando…" : "Criar projeto"}</button></div>
+        <div className="section-heading"><div><div className="eyebrow muted-eyebrow">{user ? "Sua comunidade" : "Ideias novas da comunidade"}</div><h2>Projetos recentes</h2></div><button className="create-button" onClick={openCreate} disabled={signingIn || hasCreatedProject}><span>＋</span> {signingIn ? "Conectando…" : hasCreatedProject ? "Você já criou um projeto" : "Criar projeto"}</button></div>
         {dbError && <div className="database-error" role="alert"><div><strong>Firestore bloqueou o acesso</strong><p>{dbError}</p></div><a href="https://console.firebase.google.com/project/ideator-a0d1c/firestore/databases/-default-/rules" target="_blank" rel="noreferrer">Abrir regras do Firestore</a></div>}
         <div className="explore-toolbar"><div className="project-count">{projects.length} projetos</div><div className="filters"><label className="search-box"><span className="search-icon" aria-hidden="true" /><input aria-label="Buscar projetos" placeholder="Buscar projetos, temas, habilidades..." value={queryText} onChange={(event) => setQueryText(event.target.value)} /><kbd>⌘ K</kbd></label><select aria-label="Filtrar por formato" value={mode} onChange={(event) => setMode(event.target.value)}><option>Todos os formatos</option><option>Online</option><option>Presencial</option><option>Híbrido</option></select></div></div>
         <div className="project-grid">{visibleProjects.map((project, index) => { const memberIds = getProjectMemberIds(project); const memberCount = getProjectMemberCount(project); const maxMembers = Math.max(project.maxMembers || 5, memberCount); const alreadyMember = Boolean(user && memberIds.includes(user.uid)); const joinedElsewhere = Boolean(user && projects.some((other) => other.id !== project.id && getProjectMemberIds(other).includes(user.uid))); const full = memberCount >= maxMembers; const members = getProjectMembers(project).slice(0, 4); const whatsappUrl = normalizeWhatsAppUrl(project.whatsappUrl || ""); return <article className="project-card" key={project.id}><div className={`project-art ${projectColors[index % projectColors.length]}`}><span className="project-ods">{project.ods}</span><span className="project-symbol">{index % 3 === 0 ? "⌖" : index % 3 === 1 ? "⌁" : "◌"}</span><span className="project-format">● &nbsp;{project.mode}</span></div><div className="project-content"><div className="project-author"><span className="author-avatar">{project.author.split(" ").map((part) => part[0]).slice(0, 2).join("")}</span><span>{project.author}<small>{project.course}{project.semester ? ` · ${project.semester}º semestre` : ""}</small></span>{user?.uid === project.ownerId && <div className="owner-actions"><button aria-label="Editar projeto" onClick={() => openEdit(project)}>Editar</button><button aria-label="Excluir projeto" onClick={() => void removeProject(project)}>Excluir</button></div>}</div><h3>{project.title}</h3><p>{project.description}</p><div className="skill-list">{project.skills.map((skill) => <span key={skill}>{skill}</span>)}</div><div className="project-footer"><div className="participant-summary"><div className="participant-avatars" aria-label="Participantes do projeto">{members.map((member) => <span className="participant-avatar" key={member.id} title={member.name} aria-label={member.name}>{member.photoURL ? <Image src={member.photoURL} width={30} height={30} alt="" /> : member.name.split(" ").map((part) => part[0]).slice(0, 2).join("")}</span>)}</div><span><b>{memberCount}/{maxMembers}</b> participantes</span><small>Busca: {(Array.isArray(project.needed) ? project.needed : project.needed ? [project.needed] : []).join(", ") || "Indiferente"}</small></div>{alreadyMember ? whatsappUrl ? <a className="join-button" href={whatsappUrl} target="_blank" rel="noopener noreferrer">Abrir grupo</a> : <button className="join-button" disabled title="O responsável ainda não adicionou um convite do WhatsApp">Link indisponível</button> : <button className="join-button" onClick={() => startJoinRequest(project)} disabled={joiningProjectId === project.id || full || joinedElsewhere || myProjectRequests[project.id]?.status === "pending" || myProjectRequests[project.id]?.status === "cancelled"}>{joiningProjectId === project.id ? "Enviando…" : joinedElsewhere ? "Você já participa de um projeto" : full ? "Vagas preenchidas" : myProjectRequests[project.id]?.status === "pending" ? "Pedido pendente" : myProjectRequests[project.id]?.status === "cancelled" ? "Pedido cancelado" : myProjectRequests[project.id]?.status === "rejected" ? "Solicitar novamente" : "Quero entrar no projeto"}</button>}</div>{user?.uid === project.ownerId && <details className="join-requests"><summary>Pedidos de entrada ({(projectRequests[project.id] || []).filter((item) => item.status === "pending").length})</summary>{(projectRequests[project.id] || []).filter((item) => item.status === "pending").map((request) => <div className="join-request" key={request.userId}><div className="request-person">{request.photoURL ? <Image src={request.photoURL} width={32} height={32} alt="" /> : <span>{request.name.slice(0, 1).toUpperCase()}</span>}<div><b>{request.name}</b><small>{request.availability.join(", ")}</small></div></div><div className="request-actions"><button onClick={() => void reviewJoinRequest(project, request, false)} disabled={joiningProjectId === project.id}>Recusar</button><button onClick={() => void reviewJoinRequest(project, request, true)} disabled={joiningProjectId === project.id || memberCount >= maxMembers}>Aceitar</button></div></div>)}</details>}</div></article>; })}</div>
